@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./static:/app/static
+    restart: unless-stopped
+
+  sender:
+    build:
+      context: .
+      dockerfile: Dockerfile.sender
+    volumes:
+      - ./ip_addresses.csv:/app/ip_addresses.csv
+    depends_on:
+      - server
+    restart: "no"
