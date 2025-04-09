@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Traffic Globe</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: 'Arial', sans-serif;
+            background: #0a0a1a;
+            color: #e0e0ff;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 20, 40, 0.9);
+            color: #e0e0ff;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 300px;
+            border: 1px solid #404060;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(20, 20, 40, 0.9);
+            color: #e0e0ff;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #404060;
+            backdrop-filter: blur(5px);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        #stats {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(20, 20, 40, 0.9);
+            color: #e0e0ff;
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 300px;
+            border: 1px solid #404060;
+            backdrop-filter: blur(5px);
+        }
+        button {
+            background: #3a3a6a;
+            border: none;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+            min-width: 120px;
+        }
+        button:hover {
+            background: #4a4a8a;
+            transform: translateY(-2px);
+        }
+        h2, h3 {
+            color: #ffffff;
+            margin-top: 0;
+        }
+        #top-locations {
+            padding-left: 20px;
+        }
+        #top-locations li {
+            margin-bottom: 5px;
+        }
+        .counter {
+            font-weight: bold;
+            color: #4fc3f7;
+        }
+        .suspicious-counter {
+            color: #ff6b6b;
+        }
+        .legend {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 5px currentColor;
+        }
+        #tooltip {
+            position: absolute;
+            padding: 10px;
+            background: rgba(20, 20, 40, 0.95);
+            color: white;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 14px;
+            border: 1px solid #404060;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transition: opacity 0.2s;
+            max-width: 250px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>🌐 Web Traffic Globe</h2>
+        <p>Real-time visualization of global network activity</p>
+        <div class="legend">
+            <div class="legend-color" style="background: #7bed9f; color: #7bed9f;"></div>
+            <span>Normal traffic</span>
+        </div>
+        <div class="legend">
+            <div class="legend-color" style="background: #ff6b6b; color: #ff6b6b;"></div>
+            <span>Suspicious activity</span>
+        </div>
+    </div>
+    
+    <div id="stats">
+        <h3> Statistics</h3>
+        <p>Total requests: <span id="total-count" class="counter">0</span></p>
+        <p>Suspicious: <span id="suspicious-count" class="counter suspicious-counter">0</span></p>
+        <p>📍 Top Locations:</p>
+        <ul id="top-locations"></ul>
+    </div>
+    
+    <div id="controls">
+        <button id="toggle-rotation">⏸ Pause rotation</button>
+        <button id="toggle-points"> Hide points</button>
+        <button id="reset-view"> Reset view</button>
+        <button id="speed-up"> Speed +</button>
+        <button id="speed-down"> Speed -</button>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: true,
+            alpha: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x0a0a1a, 1);
+        document.body.appendChild(renderer.domElement);
+
+        // Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 7;
+        controls.maxDistance = 20;
+
+        // Earth with texture
+        const earthGeometry = new THREE.SphereGeometry(5, 128, 128);
+        const textureLoader = new THREE.TextureLoader();
+        const earthTexture = textureLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg');
+        
+        const earthMaterial = new THREE.MeshPhongMaterial({ 
+            map: earthTexture,
+            specular: new THREE.Color(0x111111),
+            shininess: 5,
+            emissive: 0x112244,
+            emissiveIntensity: 0.1
+        });
+        
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        scene.add(earth);
+
+        // Enhanced lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight1.position.set(5, 3, 5);
+        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+        directionalLight2.position.set(-5, -3, -5);
+        scene.add(ambientLight, directionalLight1, directionalLight2);
+
+        camera.position.z = 10;
+
+        // Points system
+        const points = [];
+        const pointMaterials = [];
+        const pointLifetimes = [];
+        const maxPointLifetime = 15;
+        let rotationSpeed = 0.001;
+
+        // Stats
+        let totalPackages = 0;
+        let suspiciousPackages = 0;
+        const locationCounts = {};
+
+        // UI State
+        let autoRotate = true;
+        let showPoints = true;
+
+        // Tooltip system
+        const tooltip = document.getElementById('tooltip');
+        let hoveredPoint = null;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const pointDataMap = new WeakMap();
+
+        // UI Controls
+        document.getElementById('toggle-rotation').addEventListener('click', () => {
+            autoRotate = !autoRotate;
+            document.getElementById('toggle-rotation').textContent = 
+                autoRotate ? '⏸ Pause rotation' : '▶ Resume rotation';
+        });
+
+        document.getElementById('toggle-points').addEventListener('click', () => {
+            showPoints = !showPoints;
+            document.getElementById('toggle-points').textContent = 
+                showPoints ? 'Hide points' : 'Show points';
+        });
+
+        document.getElementById('reset-view').addEventListener('click', () => {
+            camera.position.set(0, 0, 10);
+            controls.reset();
+        });
+
+        document.getElementById('speed-up').addEventListener('click', () => {
+            rotationSpeed = Math.min(rotationSpeed + 0.0005, 0.005);
+        });
+
+        document.getElementById('speed-down').addEventListener('click', () => {
+            rotationSpeed = Math.max(rotationSpeed - 0.0005, 0);
+        });
+
+        // Helper functions
+        function latLongToVector3(lat, lon, radius) {
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (lon + 180) * (Math.PI / 180);
+            
+            return new THREE.Vector3(
+                -radius * Math.sin(phi) * Math.cos(theta),
+                radius * Math.cos(phi),
+                radius * Math.sin(phi) * Math.sin(theta)
+            );
+        }
+
+        function addPoint(lat, lon, pkg) {
+            const color = pkg.suspicious ? 0xff6b6b : 0x7bed9f;
+            const size = pkg.suspicious ? 0.15 : 0.1;
+            
+            const geometry = new THREE.SphereGeometry(size, 16, 16);
+            const material = new THREE.MeshPhongMaterial({
+                color: color,
+                transparent: true,
+                opacity: 0.8,
+                specular: 0x111111,
+                shininess: 10
+            });
+            
+            const point = new THREE.Mesh(geometry, material);
+            const position = latLongToVector3(lat, lon, 5.1);
+            point.position.copy(position);
+            
+            earth.add(point);
+            
+            const pointInfo = {
+                object: point,
+                material: material,
+                createdAt: Date.now(),
+                originalPosition: position.clone(),
+                pkgData: pkg
+            };
+            
+            points.push(pointInfo);
+            pointDataMap.set(point, pointInfo);
+            
+            const locationKey = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+            locationCounts[locationKey] = (locationCounts[locationKey] || 0) + 1;
+            
+            updateStats();
+        }
+
+        function updateStats() {
+            document.getElementById('total-count').textContent = totalPackages;
+            document.getElementById('suspicious-count').textContent = suspiciousPackages;
+            
+            const topLocations = Object.entries(locationCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+            
+            const topLocationsList = document.getElementById('top-locations');
+            topLocationsList.innerHTML = '';
+            
+            topLocations.forEach(([location, count]) => {
+                const li = document.createElement('li');
+                li.textContent = `${location}: ${count} hits`;
+                topLocationsList.appendChild(li);
+            });
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObjects(points.map(p => p.object));
+            
+            if (intersects.length > 0) {
+                const point = intersects[0].object;
+                const pointInfo = pointDataMap.get(point);
+                
+                if (pointInfo) {
+                    hoveredPoint = pointInfo;
+                    showTooltip(event.clientX, event.clientY, pointInfo.pkgData);
+                }
+            } else {
+                hoveredPoint = null;
+                hideTooltip();
+            }
+        }
+
+        function showTooltip(x, y, pkgData) {
+            tooltip.style.left = `${x + 15}px`;
+            tooltip.style.top = `${y + 15}px`;
+            tooltip.innerHTML = `
+                <div><strong>IP:</strong> ${pkgData.ip}</div>
+                <div><strong>Location:</strong> ${pkgData.latitude.toFixed(4)}, ${pkgData.longitude.toFixed(4)}</div>
+                <div><strong>Time:</strong> ${pkgData.timestamp}</div>
+                <div><strong>Status:</strong> ${pkgData.suspicious ? 'Suspicious' : 'Normal'}</div>
+            `;
+            tooltip.style.opacity = 1;
+        }
+
+        function hideTooltip() {
+            tooltip.style.opacity = 0;
+        }
+
+        // Data fetching
+        async function fetchPackages() {
+            try {
+                const response = await fetch('http://localhost:5000/api/packages');
+                if (!response.ok) throw new Error('Network response was not ok');
+                
+                const data = await response.json();
+
+                if (data.length > totalPackages) {
+                    for (let i = totalPackages; i < data.length; i++) {
+                        const pkg = data[i];
+                        addPoint(pkg.latitude, pkg.longitude, pkg);
+                        totalPackages++;
+                        if (pkg.suspicious) suspiciousPackages++;
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching packages:', error);
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (autoRotate) {
+                earth.rotation.y += rotationSpeed;
+            }
+            
+            const now = Date.now();
+            
+            for (let i = points.length - 1; i >= 0; i--) {
+                const point = points[i];
+                const age = (now - point.createdAt) / 1000;
+                
+                if (age > maxPointLifetime) {
+                    earth.remove(point.object);
+                    points.splice(i, 1);
+                    continue;
+                }
+                
+                // Highlight hovered point
+                if (point === hoveredPoint) {
+                    point.material.emissive.setHex(0x888888);
+                    point.material.emissiveIntensity = 0.5;
+                    point.object.scale.set(1.2, 1.2, 1.2);
+                } else {
+                    point.material.emissive.setHex(0x000000);
+                    point.material.emissiveIntensity = 0;
+                    point.object.scale.set(1, 1, 1);
+                }
+                
+                if (showPoints) {
+                    point.object.visible = true;
+                    point.material.opacity = 1 - (age / maxPointLifetime);
+                } else {
+                    point.object.visible = false;
+                }
+            }
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Event listeners
+        window.addEventListener('mousemove', onMouseMove, false);
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animations and periodic updates
+        animate();
+        setInterval(fetchPackages, 1000);
+
+        // Initial rotation for better view
+        earth.rotation.y = -Math.PI/4;
+    </script>
+</body>
+</html>
